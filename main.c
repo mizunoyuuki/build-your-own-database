@@ -25,10 +25,35 @@ typedef enum {
 	STATEMENT_SELECT
 } StatementType;
 
+# define COLUMN_USERNAME_SIZE 32
+# define COLUMN_EMAIL_SIZE 255
+typedef struct Row Row;
+struct Row {
+	uint32_t id;
+	char username[COLUMN_USERNAME_SIZE];
+	char email[COLUMN_EMAIL_SIZE];
+};
+
 typedef struct Statement Statement;
 struct Statement {
 	StatementType type;
+	Row row_to_insert; // only used by insert statement
 };
+
+# define size_of_attribute(Struct, Attribute) sizeof(((Struct*)0)->Attribute)
+const uint32_t ID_SIZE = size_of_attribute(Row,id);
+const uint32_t USERNAME_SIZE = size_of_attribute(Row, username);
+const uint32_t EMAIL_SIZE = size_of_attribute(Row, email);
+const uint32_t ID_OFFSET = 0;
+const uint32_t USERNAME_OFFSET = ID_OFFSET + ID_SIZE;
+const uint32_t EMAIL_OFFSET = USERNAME_OFFSET + USERNAME_SIZE;
+const uint32_t ROW_SIZE = ID_SIZE + USERNAME_SIZE + EMAIL_SIZE;
+
+void serialize_row(Row *source, void *destination){
+}
+
+void deserialize_row(void* source, Row* destination){
+}
 
 InputBuffer* new_input_buffer() {
 	InputBuffer* input_buffer = (InputBuffer*) malloc(sizeof(InputBuffer));
@@ -44,7 +69,6 @@ void print_prompt() { printf("db > "); }
 void read_input(InputBuffer* input_buffer){
 	ssize_t bytes_read = 
 		getline(&(input_buffer->buffer), &(input_buffer->buffer_length), stdin);
-
 
 	if (bytes_read <= 1){
 		printf("Error reading input\n");
@@ -67,6 +91,17 @@ MetaCommandResult do_meta_command(InputBuffer* input_buffer){
 PrepareResult prepare_statement(InputBuffer* input_buffer, Statement *statement){
 	if (strncmp(input_buffer->buffer, "insert", 6) == 0){
 		statement->type = STATEMENT_INSERT;
+
+		int args_assigned = sscanf(
+				intput_buffer->buffer,
+				"insert %d %s %s",
+			       	&(statement->row_to_insert.id),
+				statement->row_to_insert.username,
+				statement->row_to_insert.email);
+		if (args_assigned < 3){
+			return PREPARE_SYNTAX_ERROR;
+		}
+
 		return PREPARE_SUCCESS;
 	}
 	if (strcmp(input_buffer->buffer, "select") == 0){
