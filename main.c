@@ -152,7 +152,20 @@ PrepareResult prepare_statement(InputBuffer* input_buffer, Statement *statement)
 	return PREPARE_UNRECOGNIZED_STATEMENT;
 }
 
+void print_header(){
+	printf("id\t");
+	printf("username\t");
+	printf("email\n");
 
+	return;
+}
+void print_row(Row *row){
+	printf("%d\t", row->id);
+	printf("%s\t\t", row->username);
+	printf("%s\n", row->email);
+
+	return;
+}
 
 ExecuteResult execute_insert(Statement* statement, Table* table){
 	if(table->num_rows >= TABLE_MAX_ROWS){
@@ -164,11 +177,19 @@ ExecuteResult execute_insert(Statement* statement, Table* table){
 	serialize_row(row_to_insert, row_slot(table, table->num_rows));
 	table->num_rows += 1;
 
+	printf("Execute.\n\n");
+	print_header();
+	print_row(row_to_insert);
+
 	return EXECUTE_SUCCESS;
 }
 
+
+
 ExecuteResult execute_select(Statement* statement, Table* table){
 	Row row;
+	printf("Executed.\n\n");
+	print_header();
 	for (uint32_t i = 0; i < table->num_rows; i++){
 		deserialize_row(row_slot(table, i), &row);
 		print_row(&row);
