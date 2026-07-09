@@ -1,0 +1,10 @@
+## const
+
+constで配置が決まるのは「静的ストレージ期間」の変数だけ。
+
+const int g_const = 42; (グローバル)             .rodata(読み取り専用データセクション)
+int g_var = 42; (グローバル、初期化あり)         .data(読み書き可データ)
+int g_zero; (グローバル、初期化なし)        　   .bss(ゼロ初期化領域)
+static const int s_const(関数内、static + const) .rodata
+const int local_const(ローカル変数)              .スタック
+
