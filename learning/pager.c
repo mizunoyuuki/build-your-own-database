@@ -63,3 +63,16 @@ int main(int argc, char **argv){
 }
 
 
+// ssize_t ?? off_t ??
+//
+// 「用途専用の整数型」を理解する
+//
+// どちらも中身はただの整数(int や long)の別名。
+//
+// size_t   メモリ上のサイズ・個数            符号なし C標準 mallocの引数, sizeofの結果, bufferのlength
+// ssize_t  バイト数またはエラー(-1)          符号あり read, write, getlineの戻り値
+// off_t    ファイル内の位置・ファイルサイズ  符号あり lseekの戻り値
+//
+// 
+//
+
