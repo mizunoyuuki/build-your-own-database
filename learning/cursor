@@ -1,0 +1,68 @@
+# Cursorを足したことで「3層の役割分担」が綺麗に見える
+# 
+# 全体像: 三つの層は「住所」を段階的に翻訳する
+#
+# データベースがやりたいことは結局「N番目の行をメモリ上のどのバイト/に置く/から読む」を決めること
+# これを一気にやると複雑なので、責務を3段階に分ける。
+#
+# Cursor 「今どの行をさしているのか」論理的な位置
+#
+# Table  「行番号-> 何ページ目のページ内の何バイトか」
+#
+# Pager  「ページ番号-> メモリ上のポインタ(なければディスクから読む)」
+#
+# read() / write()
+#
+# File
+#
+#
+# キーワードは、「論理アドレス -> 物理アドレスへの多段変換」
+#
+######### 1. Cursor層 「イテレータ(反復子)」
+# 
+# struct Cursor が持つのは実質 row_numだけ。
+# 「今どこをさしているのか」という論理的な位置を指す。
+#
+# - table_start()    -> row_num = 0 のカーソルを作る
+# - table_end()      -> row_num = num_rows (末尾=挿入位置)を指すカーソル
+# - cursor_advance() -> row_num += 1 末尾に達したら end_of_table = true
+#
+# execute_select()を見ると役割が一目瞭然
+#
+# Cursor *cursor = table_start(table);                // 先頭にカーソルを置く
+# while (!(cursor->end_of_table)) {                   // 末尾まで
+# 	deserialize_row(cursor_value(cursor), &row);  // 今指している行を読む
+# 	print_row(&row);
+# 	cursor_advance(cursor)
+# }
+#
+# これはやってることは、C++/Javaのiteratorと全く同じ発想 insertは 「末尾のカーソル」を作ってそこにおくだけ。「どの行か」をCursorに一元化したので、今後B-Tree化しても呼び出し側は、table_start / advance / cursor_valueの三つを使うだけで済む。
+#
+######## 2. Table層 - 「行番号 -> ページ内バイト」の計算
+# 
+# cursor_value()が橋渡し
+#
+# uint32_t row_num = cursor->row_num;
+# uint32_t page_num = row_num / ROW_PER_PAGE;              // 何ページ目か
+# void *page = get_page(cursor->table->pager, page_num);   // Pagerに移譲
+# uint32_t row_offset = row_num % ROWS_PER_PAGE;           // ページ内で何行目か
+# uint32_t byte_offset = row_offset * ROW_SIZE;            // 何バイト目か
+#
+# return page + byte_offset;
+#
+######## 3. Pager層 「ページ番号 -> メモリのポインタ(キャッシュ)」
+#
+# get_page()が心臓部。ここがキャッシュ(バッファプール)
+#
+# if (pager->pages[page_num] == NULL)    // キャッシュミス
+# 	void *page = malloc(PAGE_SIZE);  // メモリ確保
+# 	...
+# 	lseek(...); read(...);           // ディスクから読み込む
+# 	pager->pages[page_num] = page;   // キャッシュに登録
+# }
+# 
+# return pager->pages[page_num];         // ヒットなら即返す
+# 
+# - pages[] は　「ページ番号 -> メモリポインタ」の対応表。既に乗っていればディスクを触らない(キャッシュヒット)。載っていなければ、read()でファイルから読み込む(遅延読み込み / lazy loading)。
+# - 逆にpager_flush()はwrite()でメモリ->ディスクへ書き出す。db_close()で全ページをflushしてから閉じる。これが永続化。
+# 
