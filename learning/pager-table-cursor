@@ -1,0 +1,91 @@
+# Pager / Table / Cursorの三層の責務・インターフェース
+# 全体像: 呼び出しの向き
+#
+# [入力層]     	InputBuffer -----------------------------------getlineで一行読む
+#
+# [Front-End]  	prepare_statement / prepare_insert  ----------「何をするか」だけを書く
+#
+# [VM]         	execute_insert / execute_select --------------「何をするか」だけを書く
+#
+# [Cursor]     	table_start / table_end / cursor_advance / cursor_value
+# 			- 論理位置(行番号) -> (ページ番号, バイトオフセット)に変換
+#
+# [Table]	db_open / db_close  --------------------------「DBインスタンスのハンドル・メタ情報(num_rows)」
+#
+# [Pager]	pager_open / get_page  / pager_flush  --------「ページ単位のキャッシュ + ファイルI/O」
+#
+# [OS]		open / lseek / read / write / close
+#
+# 下に行くほど「意味」が失われ「バイト列」に近づく。この一方向依存が設計の背景。
+#
+# 1. Pager - バイト列とファイルの橋渡し
+#
+# 責務
+# ファイルをPAGE_SIZE(4096)単位のページにきり、メモリ上にキャッシュする。それだけ行がなんバイトか、キーが何かは知らない。
+# 
+# struct Pager {
+# 	int file_descriptor;            // open(2)で得たfd
+# 	uint32_t file_length;		// 現在のファイルサイズ
+# 	void* pages[TABLE_MAX_PAGES];	// キャッシュスロット配列(100個)
+# };
+#
+# pages[i]は、「ページ番号iの中身がメモリ上のどこにあるか」 NULLなら未ロード。これが素朴なバッファプールそのもの
+#
+# インターフェース
+#
+# pager_open(filename) 
+#  - open(O_RDWR | O_CREAT)でfdを獲る(なければ作る)
+#  - lseek(fd, 0, SEEK_END)の戻り値でファイル長を取得(seekのついでに現在位置 = サイズが帰る性質を利用)
+#  - pages[]を全部NULLで初期化 = キャッシュは空の状態から始まる
+#
+# get_page(pager, page_num)
+#
+# if (pager->pages[page_num] == NULL) {			// キャッシュミス
+# 	void* page = malloc(PAGE_SIZE);			// スロットを確保
+# 	...
+# 	lseek(fd, page_num * PAGE_SIZE, SEEK_SET);
+# 	read(fd, page, PAGE_SIZE);       		// ファイルから読み込む	
+# 	pager->pages[page_num] = page;    		// キャッシュに登録
+# }
+#
+# return pager->pages[page_num];
+#
+# これがデマンドページング(遅延読み込み)です。上位層は「ページ番号をくれ」というだけで、それがメモリにあるかディスクにあるかは気にしない。
+#
+# Table - DBインスタンスのハンドル
+# 責務
+# Pagerを所有し、論理的なメタ情報を持つ。「このDBファイル全体」を表す入り口。
+#
+# struct Table {
+# 	Pager* pager;
+# 	uint32_t num_rows;   // B-Tree化で消える運命のフィールド
+# };
+#
+# インターフェース
+# db_open(filename)
+#
+# uint32_t num_rows = pager->file_length / ROW_SIZE;
+# ここがとても示唆的。このDBファイルにはヘッダがない。だから「何行入っているか」をp記録する場所がなく、ファイルサイズから逆算している。
+#
+# db_close(table)
+#
+# 永続化の全責任がここに集約される。
+#
+# 満杯ページ(num_rows / ROW_PER_PAGE)をPAGE_SIZEごとflush
+# 部分ページがあれば、(num_additional_rows * ROW_SIZE)バイトだけflush
+# close(fd)、全free
+#
+# Cursor層
+#
+# 責務
+# テーブル内のある一点をさす。イテレータであり、同時に「書き込み先の指定」でもある。
+#
+#
+# Pager / Cursor / Tableを貫いている本質は、間接参照(indirection)の階層化です。
+#
+# Cursorがやっているのは、「行番号 -> (ページ番号, オフセット)」という名前解決。Pagerがやっているのは、「ページ番号 -> メモリ上の実アドレス(なければディスクから連れてくる)」というキャッシュを伴う配置管理。この2枚を重ねると、上位層には「メモリに治らないデータが、あたかも配列のように連続して存在する」という錯覚が提供される。
+#
+# この構造は独自発明ではなく、計算機科学の同じパターンの再出現です。OSの仮想記憶は「仮想アドレス-> (ページ番号、オフセット)」をページテーブルで解決し、なければディスクからページインスる。ファイルシステムのinodeは「ファイル内オフセット-> ディスクブロック番号」を写像する。
+# CPUのキャッシュは、「物理アドレス-> キャッシュライン」を写像し、ミス時に下位から充填する。全て「論理位置 -> 物理位置の写像 + デマンドフェッチ + 有限のキャッシュロット」という同一の骨格。だからDBを学ぶとOSが分かり、逆もまた真。
+#
+
