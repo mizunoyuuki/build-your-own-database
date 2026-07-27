@@ -12,3 +12,98 @@
 #
 #
 
+## a0 = fib_iter(&fs)
+## a1 = filter_iter(&ffs, a0, is_even)
+## a2 = take_iter(&ts, a1, 5)
+## print_all(&a2)
+# 
+# 矢印で書くと、print_all -> take -> filter -> fib
+# という順番で引っ張り(pull)の連鎖です。
+#
+# 1. print_all 
+# 
+# while(it->next(it, &x)) printf("%lld", x);
+# itは &a2, a2.next;には、take_iterが入れたtake_nextが入っているので、この行の実態は、take_next(&a2, &x)
+# です。print_allは、「相手がtakeなのかfilterなのか」を一切知らない。
+# 知っているのは「nextを呼べば次の値をくれる。」という契約だけ。
+#
+# take_next
+#
+# if (s->remaining <= 0) return false;
+# if (!s->src.next(&s->src, out)) return false;
+#
+# s-> remaining--;
+#
+# self->stateは、&ts(TakeState) s->srcはfilterのIteratorのコピーなので、s->src.next = filter_next.
+# つまりここで、filter_next(&ts.src, out)が呼ばれる。
+# take自身は値を一個もらうまで何もせず、「上流に一個くれ」と頼んで、もらえたら残り回数を減らすだけ。
+#
+# filter_next
+# while(s->src.next(&s->src, &x)) {
+# 	if (s->pred(x)) { *out = x; return true; }
+# }
+#
+# s->src.next = fib_nextl; ここが面白いところで、filterは条件を満たす値が出るまで上流を何回でも呼ぶ。
+# フィボナッチ数列は、0,1,2,3,5,8,13なので、[2]を返すには、fib_nextを3回()読んで、奇数の1,1は捨てる。
+#
+# fib_next
+# 
+# *out = s->a
+# long long n = s->a + s->b;
+# s->a = s->b; s->b = n;
+#
+# ここで初めて値が「作られる」
+#
+# 「どういう原理でデータが作られているのか、答えは、どこにもデータは作られていない」配列もリストも存在しない。
+# 存在するのは、状態(state) fs = {a, b}  ffs = { 上流, 述語 } ts = { 上流, 残り回数 } 全部maijnのスタックの上の小さなstruct
+# 進め方(next): 関数ポインタ
+#
+# print_allのwhileが一周するたびに、要求がtake -> filter -> fib と降りていき、計算結果が *out経由で上がってくる。
+# 「次をくれ」と言われた瞬間に、その一個だけを計算する。
+# これが遅延評価(lazy evaluation)で、だからこそfib_iterが概念上は無限でも、プログラムが停止する。
+# 無限の全体は決して実在化せず、takeが5回で falseを返した時点で誰も上流を呼ばなくなるだけ。
+#
+# void *stateは、「型消去」の最小実装
+# Iterator.stateが void*なのは偶然ではなく、「どんな状態型でも一つのIterator型に押し込む」ための意図的な設計。で、型消去と呼ばれる。
+#
+# Cではvoid*への任意オブジェクトポインタが暗黙変換でき、FibState *s = self->state;
+# のように戻す時もキャスト不要。
+#
+#
+# &s->srcは「何も読んでいない」 アドレス計算だけが起きる。
+#
+# s->src.next(&s->src, out)の&s->srcは、一見sをたどってsrcを取り出して、そのアドレスを。。。という操作に見えるがメモリアクセスが一回も発生しない足し算一個になる。
+#
+# selfを手渡しすることが暴いている、オブジェクト指向の正体
+#
+# このコードで毎回it->next(it, &x)と、itを2回書くのが冗長に感じますが、この冗長さこそがオブジェクト指向の種明かし。
+#
+# nextが受け取らなければならないものは、突き詰めると一つ。
+# 	自分の永続的な状態への、書き換え可能なポインタ
+#
+# 「今どこまで進んだか」は呼び出しをまたいで生き残らなければならないが、ローカル変数はreturnで消える。
+# だから状態は(呼び出し側が確保したstruct)に書き、毎回その場所を教えてもらうしかない。
+# これは物理法則。
+#
+# 別にselfを渡さなくてもIteratorは書ける。
+#
+# selfが意味を持つのは、イテレータが「自分の状態」以上に、「自分自身」に触りたくなった瞬間。
+#
+# 具体的には二つ
+#
+# 1. 自分の挙動を書き換えられる(関数ポインタの差し替え)
+#
+# static bool empty_next(Iterator *self, long long *out){ return false; }
+#
+# static bool take_next(Iterator *self, long long *out) {
+# 	TakeState *s = self->state;
+# 	if (s->remaining <= 0 || !s->src.next(&s->src, out)){
+# 		self->next = empty_next;
+# 		return false;
+# 	}
+#
+# 	s->remaining--;
+# 	return true;
+# }
+
+
