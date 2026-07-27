@@ -1,4 +1,4 @@
-# include <strio.h>
+# include <stdio.h>
 # include <stdbool.h>
 
 typedef struct Iterator Iterator;
@@ -18,7 +18,7 @@ typedef struct {
 
 static bool fib_next(Iterator* self, long long *out) {
 	FibState *s = self->state;
-	fib_calles++;
+	fib_calls++;
 
 	*out = s->a;
 	long long n = s->a + s->b;
@@ -67,7 +67,7 @@ static bool filter_next(Iterator* self, long long* out){
 	FilterState* s = self->state;
 	long long x;
 
-	while(s->src.next(&->src, &x)) {
+	while(s->src.next(&s->src, &x)) {
 		if (s->pred(x)) { *out = x; return true; }
 	}
 
