@@ -40,6 +40,7 @@ typedef struct {
 
 
 
+// 理解しよう!!!!!
 int main(void){
 	Iterator *it = take(filter(fib(), is_even), 10);
 
