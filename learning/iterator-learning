@@ -105,5 +105,34 @@
 # 	s->remaining--;
 # 	return true;
 # }
-
-
+#
+#
+#
+# ハンドルと状態が「別々の二つの物体」
+# struct Iterator {
+# 	bool (*next)(void* state, long long* out);
+# 	void* state;
+# }
+#
+# typedef struct { long long a, b; } FibState;
+#
+# メモリ上は物体が二個ある。
+#
+# 呼び出し側は、
+# it->next(it->state, &out);
+# ハンドルを経由して state ポインタを取り出し、それを渡す。二段間接参照
+#
+# ハンドルと状態を一つの物体に合体
+#
+# struct Iterator {
+# 	bool (*next)(Iterator* self, long long* out);
+# }
+#
+# typedef struct {
+# 	Iterator base;
+# 	long long a,b;
+# } FibIter;
+#
+# selfだと可能になる。
+#
+# it->next(it, &out)
